@@ -4,12 +4,12 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_ollama import OllamaEmbeddings
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain.chains import ConversationalRetrievalChain
 from langchain.memory import ConversationBufferMemory
 from langchain_community.vectorstores import FAISS
+from langchain.chains import create_history_aware_retriever, create_retrieval_chain
 
 from document_processing import DocumentLoaderException, create_docs
-from utils import is_query_relevant_llm, rag_prompt, summarize_docs
+from utils import  rag_prompt, contextualize_query_prompt
 
 # ===============================
 # ENVIRONMENT & MODEL SETUP
@@ -46,7 +46,7 @@ if st.button("🔄 Reset Chat / Start Over"):
 # SESSION STATE INITIALIZATION
 # ===============================
 if "memory" not in st.session_state:
-    st.session_state.memory = None
+    st.session_state.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
@@ -75,18 +75,24 @@ if (uploaded_file or url) and st.session_state.vectorstore is None:
         # Create FAISS vectorstore
         st.session_state.vectorstore = FAISS.from_documents(docs, embeddings)
 
-        # Build retrieval chain
-        document_chain = create_stuff_documents_chain(llm, rag_prompt)
+        # Create retriever 
         st.session_state.retriever = st.session_state.vectorstore.as_retriever()
-        st.session_state.memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
-        st.session_state.retrieval_chain = ConversationalRetrievalChain.from_llm(
+        
+        # Create a history-aware retriever
+        history_aware_retriever = create_history_aware_retriever(
             llm=llm,
             retriever=st.session_state.retriever,
-            memory=st.session_state.memory
+            prompt=contextualize_query_prompt
         )
-        # Create a quick summary of the docs for the LLM-Gaurdrail
-        st.session_state.docs_summary = summarize_docs(llm, st.session_state.retriever)
-        print(st.session_state.docs_summary)
+
+        # Create a document chain
+        document_chain = create_stuff_documents_chain(llm, rag_prompt)
+
+        # Create a Retrieval chain
+        st.session_state.retrieval_chain = create_retrieval_chain(
+            history_aware_retriever,
+            document_chain
+        )
 
     st.success("✅ Document loaded successfully! You can now ask questions.")
 
@@ -108,16 +114,17 @@ if st.session_state.retrieval_chain:
         with st.chat_message("human"):
             st.markdown(user_query)
 
-        with st.spinner("🔍 Searching..."):
-            relevant = is_query_relevant_llm(user_query, llm, st.session_state.docs_summary)
-            # Generate response
-            if not relevant:
-                with st.chat_message("assistant"):
-                    st.warning("🚫 That question seems unrelated to the uploaded document. Please ask something relevant.")
-            else:
-                with st.chat_message("assistant"):
-                    response = st.session_state.retrieval_chain.invoke({"question": user_query})
-                    answer = response["answer"]
-                    st.markdown(answer)
+        with st.spinner("🤔 Thinking..."):
+            response = st.session_state.retrieval_chain.invoke({
+                "input": user_query,
+                "chat_history": st.session_state.memory.chat_memory.messages
+            })
+            answer = response["answer"]
+        # Display assistant's response
+        with st.chat_message("assistant"):
+            st.markdown(answer)
+        # Update memory
+        st.session_state.memory.chat_memory.add_user_message(user_query)
+        st.session_state.memory.chat_memory.add_ai_message(answer)
 
 

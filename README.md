@@ -3,7 +3,7 @@
 ## Overview
 
 An AI-powered chatbot built using LangChain, Groq LLM, Ollama and FAISS, which enables you to upload documents or URLs and ask context-aware questions.
-The chatbot answers only based on the uploaded document and refuses unrelated questions using a built-in LLM guardrail.
+The chatbot answers only based on the uploaded document and refuses to answer unrelated questions.
 
 ------------------------------------------------------------------------
 
@@ -11,10 +11,8 @@ The chatbot answers only based on the uploaded document and refuses unrelated qu
 
 - Upload or link a document — Supports PDF, DOCX, and TXT files, or a valid website URL.
 - Retrieval-Augmented Generation (RAG) — Answers are generated only from your document content.
-- LLM Guardrail — Detects and blocks irrelevant or out-of-scope questions.
 - Conversational Memory — Maintains context through ongoing chat history.
 - Instant Reset — Clear the chat and reload a new document easily.
-- Document Summarization — Creates an automatic summary for guardrail decision-making.
 
 ------------------------------------------------------------------------
 
@@ -38,7 +36,7 @@ The chatbot answers only based on the uploaded document and refuses unrelated qu
 │
 ├── main.py                 # Main Streamlit app
 ├── document_processing.py  # Handles document loading and splitting
-├── utils.py                # Helper utilities (guardrail, summary, prompts)
+├── utils.py                # Helper utilities 
 ├── .env                    # Store your GROQ_API_KEY
 ├── requirements.txt        # Project dependencies
 └── README.md               # Project documentation
@@ -103,23 +101,21 @@ The chatbot answers only based on the uploaded document and refuses unrelated qu
 
 ## Project Workflow
 1. Upload a document or enter a URL
-The file is loaded and split into smaller chunks using a RecursiveCharacterTextSplitter.
+The user uploads a document (PDF, DOCX, or TXT) or provides a URL.
+The content is extracted and split into smaller chunks using a RecursiveCharacterTextSplitter for efficient retrieval.
 
-2. Vectorization
-Each chunk is converted into embeddings using Ollama Embeddings and stored in FAISS.
+2. Embedding & Vector Store Creation
+Each chunk is converted into embeddings using Ollama Embeddings (embeddinggemma model).
+These embeddings are stored in a FAISS vector store for fast similarity search.
 
-3. Document Summary
-The system creates a quick summary of the content — used later by the guardrail.
+3. User Query
+Context-Aware Question Answering
+For every user query, a history-aware retriever reformulates the question based on previous chat context (e.g., “What is Bert?” (first question) 
+“What is it used for?” (second question) is converted to “What is BERT used for?”).
+The refined query retrieves relevant chunks from FAISS, and the LLM generates a concise, contextually accurate response.
 
-4. User Query & Guardrail
-Every user query is checked for relevance using an LLM-based filter (is_query_relevant_llm).
-
-    - If irrelevant, the bot warns the user.
-
-    - If relevant, it retrieves matching chunks from FAISS and generates an answer using ConversationalRetrievalChain.
-
-5. Conversation Memory
-Maintains the chat history using ConversationBufferMemory.
+4. Conversation Memory & Continuity
+Chat history is maintained using ConversationBufferMemory, allowing for continuous, context-aware dialogue across multiple queries within a session.
 
 ------------------------------------------------------------------------
 
